@@ -1,0 +1,16 @@
+{
+  "id": 3,
+  "titulo": "Relatório Personalizado Preços Alvino",
+  "descricao": "",
+  "status": "Em andamento",
+  "qp_link": "",
+  "qp_status": "",
+  "anotacoes": [
+    {
+      "data": "18/11/2026 14:52",
+      "texto": "https://qualityautomacao.atlassian.net/browse/QP-39751"
+    }
+  ],
+  "criado_em": "18/11/2026 14:52",
+  "pasta": "relatrio-personalizado-preos-alvino"
+}
