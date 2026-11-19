@@ -1,0 +1,16 @@
+{
+  "id": 2,
+  "titulo": "Abastecimentos Central JB",
+  "descricao": "Analisar os abastecimentos da rede central JB de acordo com o que está na automação",
+  "status": "Em andamento",
+  "qp_link": "",
+  "qp_status": "",
+  "anotacoes": [
+    {
+      "data": "18/11/2026 14:13",
+      "texto": "<img src=\"/uploads/8bb025d76bb841cabb26d0cd05dc9c5f.png\"><br>"
+    }
+  ],
+  "criado_em": "18/11/2026 14:13",
+  "pasta": "abastecimentos-central-jb"
+}
