@@ -2,9 +2,5 @@
   "dry": {
     "salt": "3dec11d7eaf19187498f7648fa1f5a16",
     "hash": "5e272eba5a1538b0ba7d6ffab14eb3d648a9efa38b139a6d5549a2fd4bdfd695"
-  },
-  "macaco_andre": {
-    "salt": "fea95329c631aa67cb235273241fa6e2",
-    "hash": "87dd4bfa24208d6cbb13880a0497f386b758b4b3d4497ca1bbf6a85e6ace464d"
   }
 }
