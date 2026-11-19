@@ -1,6 +1,14 @@
 {
   "dry": {
     "salt": "3dec11d7eaf19187498f7648fa1f5a16",
-    "hash": "5e272eba5a1538b0ba7d6ffab14eb3d648a9efa38b139a6d5549a2fd4bdfd695"
+    "hash": "5e272eba5a1538b0ba7d6ffab14eb3d648a9efa38b139a6d5549a2fd4bdfd695",
+    "cadastrar_usuario": "sim",
+    "master": "sim"
+  },
+  "macaco": {
+    "salt": "316aebdc05746e5fcf1535f0b5142168",
+    "hash": "a65b66d651c482756982778f617f122b0f8b6d75a7bc8783d4422d79ddc574d3",
+    "cadastrar_usuario": "sim",
+    "master": "não"
   }
 }
