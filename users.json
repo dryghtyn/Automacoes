@@ -8,7 +8,7 @@
   "macaco": {
     "salt": "316aebdc05746e5fcf1535f0b5142168",
     "hash": "a65b66d651c482756982778f617f122b0f8b6d75a7bc8783d4422d79ddc574d3",
-    "cadastrar_usuario": "não",
+    "cadastrar_usuario": "sim",
     "master": "não"
   }
 }
