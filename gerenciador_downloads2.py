@@ -435,10 +435,27 @@ class DownloadManagerApp:
             task["status"] = "error"
             task["error"] = str(e)
             self._log(f"Erro {task['filename']}: {e}")
+            # auto-retry em 5 segundos
+            try:
+                self.root.after(5000, lambda tid=tid: self._retry_task(tid))
+            except Exception:
+                pass
         finally:
             task["status"] = task.get("status", "paused")
             _salvar_config(self.config_path, self.cfg)
             self.root.after(0, self._atualizar_row, tid)
+
+    def _retry_task(self, tid):
+        for t in self.cfg["tasks"]:
+            if t["id"] == tid:
+                if t.get("status") != "error":
+                    return
+                t["status"] = "paused"
+                t["error"] = ""
+                _salvar_config(self.config_path, self.cfg)
+                self._log(f"Retentando em 5s: {t['filename']}")
+                self._continuar(t)
+                return
 
     def _continuar_todos(self):
         for t in list(self.cfg["tasks"]):
