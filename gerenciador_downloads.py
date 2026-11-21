@@ -8,13 +8,33 @@ import urllib.parse
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, scrolledtext
 
+# Garante que a pasta de trabalho exista
+try:
+    BASE.mkdir(parents=True, exist_ok=True)
+except Exception:
+    pass
+
 DEPENDENCIAS = [("requests", "requests")]
 for nome_import, nome_pip in DEPENDENCIAS:
     try:
         __import__(nome_import)
     except ImportError:
-        import subprocess
-        subprocess.check_call([sys.executable, "-m", "pip", "install", nome_pip, "--quiet"])
+        try:
+            import subprocess
+            subprocess.check_call([sys.executable, "-m", "pip", "install", nome_pip],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            __import__(nome_import)
+        except Exception as e:
+            try:
+                with open(str(BASE / "gerenciador_downloads_erro.log"), "w", encoding="utf-8") as f:
+                    f.write(f"Falha ao instalar {nome_pip}: {e}\n")
+            except Exception:
+                try:
+                    with open("gerenciador_downloads_erro.log", "w", encoding="utf-8") as f:
+                        f.write(f"Falha ao instalar {nome_pip}: {e}\n")
+                except Exception:
+                    pass
+            raise
 
 import requests
 
@@ -51,6 +71,8 @@ def _carregar_config(caminho):
         d.setdefault("download_dir", "")
         d.setdefault("auto_resume", True)
         d.setdefault("tasks", [])
+        d.setdefault("boost", False)
+        d.setdefault("theme", "Claro")
         for t in d["tasks"]:
             t.setdefault("status", "paused")
             t.setdefault("downloaded", 0)
@@ -80,6 +102,61 @@ class DownloadManagerApp:
     def __init__(self, root, config_path):
         self.root = root
         self.root.title("Gerenciador de Downloads")
+        self.config_path = Path(config_path)
+        self.cfg = _carregar_config(self.config_path)
+        self.lock = threading.Lock()
+        self.rows = {}
+        self.threads = {}
+        self.cancel_flags = {}
+
+        frame = ttk.Frame(root, padding=(10, 8))
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        pasta_frame = ttk.Frame(frame)
+        pasta_frame.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(pasta_frame, text="Pasta de download:").pack(side=tk.LEFT)
+        self.lbl_pasta = ttk.Label(pasta_frame, text=self.cfg["download_dir"] or "(não definida)", foreground="blue")
+        self.lbl_pasta.pack(side=tk.LEFT, padx=6)
+        ttk.Button(pasta_frame, text="Escolher pasta", command=self._escolher_pasta).pack(side=tk.RIGHT)
+
+        lista_frame = ttk.LabelFrame(frame, text="Downloads", padding=(6, 4))
+        lista_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
+        self.inner = ttk.Frame(lista_frame)
+        self.inner.pack(fill=tk.BOTH, expand=True)
+
+        add_frame = ttk.Frame(frame)
+        add_frame.pack(fill=tk.X, pady=(0, 6))
+        self.entry_url = ttk.Entry(add_frame)
+        self.entry_url.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
+        ttk.Button(add_frame, text="Adicionar download", command=self._adicionar).pack(side=tk.RIGHT)
+
+        nav_frame = ttk.Frame(frame)
+        nav_frame.pack(fill=tk.X, pady=(0, 6))
+        ttk.Button(nav_frame, text="Abrir no navegador", command=self._abrir_navegador).pack(side=tk.LEFT)
+        ttk.Button(nav_frame, text="Extrair links da página", command=self._extrair_links).pack(side=tk.LEFT, padx=6)
+        ttk.Label(nav_frame, text="Cole o link copiado do navegador no campo acima.", font=("Segoe UI", 8), foreground="gray").pack(side=tk.RIGHT)
+
+        ctrl_frame = ttk.Frame(frame)
+        ctrl_frame.pack(fill=tk.X, pady=(0, 6))
+        ttk.Button(ctrl_frame, text="Continuar todos", command=self._continuar_todos).pack(side=tk.LEFT)
+        ttk.Button(ctrl_frame, text="Pausar todos", command=self._pausar_todos).pack(side=tk.LEFT, padx=6)
+        self.boost_var = tk.BooleanVar(value=self.cfg.get("boost", False))
+        self.boost_var.trace_add("write", lambda *a: self._salvar_cfg())
+        ttk.Checkbutton(ctrl_frame, text="Boost velocidade", variable=self.boost_var).pack(side=tk.LEFT, padx=6)
+        self.tema_var = tk.StringVar(value=self.cfg.get("theme", "Claro"))
+        ttk.Combobox(ctrl_frame, textvariable=self.tema_var, values=["Claro", "Escuro"], state="readonly", width=9).pack(side=tk.LEFT, padx=6)
+        self.tema_var.trace_add("write", lambda *a: (self._aplicar_tema(), self._salvar_cfg()))
+        ttk.Button(ctrl_frame, text="Atualizar do GitHub", command=self._atualizar_github).pack(side=tk.LEFT, padx=6)
+        ttk.Button(ctrl_frame, text="Limpar concluídos", command=self._limpar_concluidos).pack(side=tk.RIGHT)
+
+        self.log = scrolledtext.ScrolledText(frame, height=6, state="disabled", font=("Consolas", 9))
+        self.log.pack(fill=tk.BOTH, expand=False)
+
+        for t in self.cfg["tasks"]:
+            self._render_task(t)
+        self._aplicar_tema()
+        if self.cfg.get("auto_resume"):
+            self.root.after(500, self._auto_resume)
         self.root.geometry("760x560")
         self.root.minsize(600, 400)
         self.config_path = Path(config_path)
@@ -104,14 +181,8 @@ class DownloadManagerApp:
         lista_frame = ttk.LabelFrame(frame, text="Downloads", padding=(6, 4))
         lista_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
 
-        self.canvas = tk.Canvas(lista_frame, borderwidth=0)
-        self.scroll = ttk.Scrollbar(lista_frame, orient="vertical", command=self.canvas.yview)
-        self.inner = ttk.Frame(self.canvas)
-        self.inner.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-        self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
-        self.canvas.configure(yscrollcommand=self.scroll.set)
-        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.inner = ttk.Frame(lista_frame)
+        self.inner.pack(fill=tk.BOTH, expand=True)
 
         # Adicionar URL
         add_frame = ttk.Frame(frame)
@@ -131,6 +202,13 @@ class DownloadManagerApp:
         ctrl_frame.pack(fill=tk.X, pady=(0, 6))
         ttk.Button(ctrl_frame, text="Continuar todos", command=self._continuar_todos).pack(side=tk.LEFT)
         ttk.Button(ctrl_frame, text="Pausar todos", command=self._pausar_todos).pack(side=tk.LEFT, padx=6)
+        self.boost_var = tk.BooleanVar(value=self.cfg.get("boost", False))
+        self.boost_var.trace_add("write", lambda *a: self._salvar_cfg())
+        ttk.Checkbutton(ctrl_frame, text="Boost velocidade", variable=self.boost_var).pack(side=tk.LEFT, padx=6)
+        self.tema_var = tk.StringVar(value=self.cfg.get("theme", "Claro"))
+        ttk.Combobox(ctrl_frame, textvariable=self.tema_var, values=["Claro", "Escuro"], state="readonly", width=9).pack(side=tk.LEFT, padx=6)
+        self.tema_var.trace_add("write", lambda *a: (self._aplicar_tema(), self._salvar_cfg()))
+        ttk.Button(ctrl_frame, text="Atualizar do GitHub", command=self._atualizar_github).pack(side=tk.LEFT, padx=6)
         ttk.Button(ctrl_frame, text="Limpar concluídos", command=self._limpar_concluidos).pack(side=tk.RIGHT)
 
         self.log = scrolledtext.ScrolledText(frame, height=6, state="disabled", font=("Consolas", 9))
@@ -139,9 +217,18 @@ class DownloadManagerApp:
         # Renderiza tasks existentes
         for t in self.cfg["tasks"]:
             self._render_task(t)
+        self._aplicar_tema()
         # Auto-resume
         if self.cfg.get("auto_resume"):
             self.root.after(500, self._auto_resume)
+
+    def _salvar_cfg(self):
+        try:
+            self.cfg["boost"] = bool(self.boost_var.get())
+            self.cfg["theme"] = self.tema_var.get()
+            _salvar_config(self.config_path, self.cfg)
+        except Exception:
+            pass
 
     def _log(self, msg):
         self.log.configure(state="normal")
@@ -250,14 +337,18 @@ class DownloadManagerApp:
             return
         row = ttk.Frame(self.inner, padding=(4, 3))
         row.pack(fill=tk.X, pady=2)
-        lbl = ttk.Label(row, text=task["filename"], width=24)
-        lbl.pack(side=tk.LEFT)
-        pb = ttk.Progressbar(row, length=200, mode="determinate")
-        pb.pack(side=tk.LEFT, padx=6)
-        status = ttk.Label(row, text=task["status"], width=26, anchor="w")
-        status.pack(side=tk.LEFT, padx=4)
+        row.columnconfigure(0, weight=0, minsize=160)
+        row.columnconfigure(1, weight=1, minsize=150)
+        row.columnconfigure(2, weight=0, minsize=260)
+        row.columnconfigure(3, weight=0, minsize=90)
+        lbl = ttk.Label(row, text=task["filename"], width=20, anchor="w")
+        lbl.grid(row=0, column=0, sticky="w", padx=(0,4))
+        pb = ttk.Progressbar(row, length=150, mode="determinate")
+        pb.grid(row=0, column=1, sticky="ew", padx=4)
+        status = ttk.Label(row, text=task["status"], anchor="w")
+        status.grid(row=0, column=2, sticky="w", padx=4)
         btn_frame = ttk.Frame(row)
-        btn_frame.pack(side=tk.RIGHT)
+        btn_frame.grid(row=0, column=3, sticky="e", padx=(4,0))
         btn_cont = ttk.Button(btn_frame, text="▶", width=3, command=lambda t=task: self._continuar(t))
         btn_cont.pack(side=tk.LEFT, padx=1)
         btn_pause = ttk.Button(btn_frame, text="⏸", width=3, command=lambda t=task: self._pausar(t))
@@ -300,10 +391,14 @@ class DownloadManagerApp:
         st = task.get("status", "paused")
         if task.get("error"):
             st = "erro"
+        speed = task.get("speed", 0)
+        speed_str = ""
+        if speed and speed > 0:
+            speed_str = f"  {_fmt(speed)}/s"
         if total and total > 0:
-            status.config(text=f"{st}: {_fmt(downloaded)} / {_fmt(total)}")
+            status.config(text=f"{st} {_fmt(downloaded)}/{_fmt(total)}{speed_str}")
         else:
-            status.config(text=f"{st}: {_fmt(downloaded)}")
+            status.config(text=f"{st} {_fmt(downloaded)}{speed_str}")
 
     def _continuar(self, task):
         tid = task["id"]
@@ -372,12 +467,13 @@ class DownloadManagerApp:
                     os.remove(dest)
             except Exception:
                 pass
+        boost = getattr(self, "boost_var", None)
+        boost_on = boost.get() if boost else False
+        chunk_size = 1024*1024 if boost_on else 65536
         try:
             r = requests.get(url, headers=headers, stream=True, timeout=30)
-            # total
             total = task.get("total", 0)
             if "Content-Range" in r.headers:
-                # bytes 100-200/500
                 try:
                     total = int(r.headers["Content-Range"].split("/")[-1])
                 except Exception:
@@ -386,9 +482,7 @@ class DownloadManagerApp:
                 cl = int(r.headers["Content-Length"])
                 total = downloaded + cl if downloaded > 0 else cl
             task["total"] = total
-            # se servidor não suporta range (200 em vez de 206), reinicia
             if r.status_code == 200 and downloaded > 0:
-                # reinicia do zero
                 downloaded = 0
                 task["downloaded"] = 0
                 mode = "wb"
@@ -397,14 +491,23 @@ class DownloadManagerApp:
                 total = int(r.headers.get("Content-Length", 0))
                 task["total"] = total
             os.makedirs(os.path.dirname(dest), exist_ok=True)
+            last_time = time.time()
+            last_bytes = downloaded
             with open(dest, mode) as f:
-                for chunk in r.iter_content(chunk_size=65536):
+                for chunk in r.iter_content(chunk_size=chunk_size):
                     if self.cancel_flags.get(tid):
                         break
                     if chunk:
                         f.write(chunk)
                         downloaded += len(chunk)
                         task["downloaded"] = downloaded
+                        now = time.time()
+                        dt = now - last_time
+                        if dt >= 0.5:
+                            speed = (downloaded - last_bytes) / dt
+                            task["speed"] = speed
+                            last_time = now
+                            last_bytes = downloaded
                         self.root.after(0, self._atualizar_row, tid)
             if self.cancel_flags.get(tid):
                 task["status"] = "paused"
@@ -416,10 +519,26 @@ class DownloadManagerApp:
             task["status"] = "error"
             task["error"] = str(e)
             self._log(f"Erro {task['filename']}: {e}")
+            try:
+                self.root.after(5000, lambda tid=tid: self._retry_task(tid))
+            except Exception:
+                pass
         finally:
             task["status"] = task.get("status", "paused")
             _salvar_config(self.config_path, self.cfg)
             self.root.after(0, self._atualizar_row, tid)
+
+    def _retry_task(self, tid):
+        for t in self.cfg["tasks"]:
+            if t["id"] == tid:
+                if t.get("status") != "error":
+                    return
+                t["status"] = "paused"
+                t["error"] = ""
+                _salvar_config(self.config_path, self.cfg)
+                self._log(f"Retentando em 5s: {t['filename']}")
+                self._continuar(t)
+                return
 
     def _continuar_todos(self):
         for t in list(self.cfg["tasks"]):
@@ -440,6 +559,106 @@ class DownloadManagerApp:
         _salvar_config(self.config_path, self.cfg)
         self._log("Concluídos removidos.")
 
+    def _aplicar_tema(self):
+        estilo = ttk.Style(self.root)
+        try:
+            estilo.theme_use("clam")
+        except Exception:
+            pass
+        if self.tema_var.get() == "Escuro":
+            bg = "#1e1e1e"; fg = "#e6e6e6"; panel = "#2d2d30"; borda = "#3e3e42"
+            campo = "#2d2d30"; campo_fg = "#e6e6e6"; sel = "#094771"
+        else:
+            bg = "#f0f0f0"; fg = "#1a1a1a"; panel = "#fafafa"; borda = "#c9c9c9"
+            campo = "#ffffff"; campo_fg = "#1a1a1a"; sel = "#0078d4"
+        estilo.configure(".", background=bg, foreground=fg)
+        estilo.configure("TFrame", background=bg)
+        estilo.configure("TLabel", background=bg, foreground=fg)
+        estilo.configure("TLabelframe", background=bg, foreground=fg, bordercolor=borda)
+        estilo.configure("TLabelframe.Label", background=bg, foreground=fg)
+        estilo.configure("TButton", background=panel, foreground=fg, bordercolor=borda)
+        estilo.map("TButton", background=[("active", sel)], foreground=[("active", "#ffffff")])
+        estilo.configure("TEntry", fieldbackground=campo, foreground=campo_fg, bordercolor=borda, insertcolor=campo_fg)
+        estilo.configure("TCheckbutton", background=bg, foreground=fg)
+        estilo.configure("TCombobox", fieldbackground=campo, foreground=campo_fg, background=panel, bordercolor=borda)
+        estilo.configure("TProgressbar", background=sel, troughcolor=panel)
+        self.root.configure(bg=bg)
+        try:
+            self.canvas.configure(bg=bg)
+            self.inner.configure(style="TFrame")
+        except Exception:
+            pass
+        try:
+            self.log.configure(bg=campo, fg=campo_fg, insertbackground=campo_fg)
+        except Exception:
+            pass
+        # aplica bg a todos os frames/labels filhos
+        def _rec(w):
+            try:
+                if isinstance(w, (tk.Frame, tk.LabelFrame, tk.Canvas)):
+                    w.configure(bg=bg)
+                elif isinstance(w, tk.Label):
+                    w.configure(bg=bg, fg=fg)
+            except Exception:
+                pass
+            for c in w.winfo_children():
+                _rec(c)
+        try:
+            _rec(self.root)
+        except Exception:
+            pass
+
+    def _atualizar_github(self):
+        # lê github_config.json do painel (se existir) para obter owner/repo/branch
+        cfg_gh = None
+        try:
+            gh_path = BASE / "github_config.json"
+            if gh_path.exists():
+                with open(gh_path, "r", encoding="utf-8") as f:
+                    cfg_gh = json.load(f)
+        except Exception:
+            cfg_gh = None
+        if not cfg_gh or not cfg_gh.get("owner") or not cfg_gh.get("repo"):
+            # pede ao usuário
+            from tkinter import simpledialog
+            owner = simpledialog.askstring("GitHub", "Owner (usuário):", parent=self.root)
+            repo = simpledialog.askstring("GitHub", "Repositório:", parent=self.root)
+            branch = simpledialog.askstring("GitHub", "Branch:", initialvalue="main", parent=self.root) or "main"
+            if not owner or not repo:
+                self._log("Atualização cancelada: owner/repo não informados.")
+                return
+            cfg_gh = {"owner": owner, "repo": repo, "branch": branch, "token": ""}
+        owner = cfg_gh["owner"].strip()
+        repo = cfg_gh["repo"].strip()
+        branch = (cfg_gh.get("branch") or "main").strip() or "main"
+        token = (cfg_gh.get("token") or "").strip()
+        arquivo = "gerenciador_downloads.py"
+        import urllib.request
+        url = f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{arquivo}"
+        try:
+            req = urllib.request.Request(url)
+            if token:
+                req.add_header("Authorization", f"Bearer {token}")
+            req.add_header("User-Agent", "gerenciador-downloads")
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                novo = resp.read()
+            # backup
+            atual = BASE / arquivo
+            backup = BASE / (arquivo + ".bak")
+            if atual.exists():
+                try:
+                    backup.write_bytes(atual.read_bytes())
+                except Exception:
+                    pass
+            atual.write_bytes(novo)
+            self._log(f"Atualizado de {owner}/{repo}. Reinicie a automação para aplicar.")
+            from tkinter import messagebox
+            messagebox.showinfo("Atualizado", "Download da atualização concluído. Reinicie a automação para aplicar.")
+        except Exception as e:
+            self._log(f"Falha ao atualizar: {e}")
+            from tkinter import messagebox
+            messagebox.showerror("Erro", f"Falha ao baixar atualização:\n{e}")
+
     def _auto_resume(self):
         for t in list(self.cfg["tasks"]):
             if t.get("status") in ("downloading", "paused", "error") and t.get("downloaded", 0) < (t.get("total") or 1):
@@ -455,10 +674,41 @@ def main():
     if not config_path.is_absolute():
         config_path = BASE / config_path
 
-    root = tk.Tk()
-    app = DownloadManagerApp(root, config_path)
-    root.mainloop()
+        root = tk.Tk()
+        root.title("Gerenciador de Downloads")
+        app = DownloadManagerApp(root, config_path)
+        def _on_close():
+            try:
+                _salvar_config(app.config_path, app.cfg)
+            except Exception:
+                pass
+            root.destroy()
+        root.protocol("WM_DELETE_WINDOW", _on_close)
+        root.mainloop()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        log_path = None
+        try:
+            log_path = str(BASE / "gerenciador_downloads_erro.log")
+            with open(log_path, "w", encoding="utf-8") as f:
+                traceback.print_exc(file=f)
+        except Exception:
+            try:
+                log_path = "gerenciador_downloads_erro.log"
+                with open(log_path, "w", encoding="utf-8") as f:
+                    traceback.print_exc(file=f)
+            except Exception:
+                pass
+        try:
+            from tkinter import messagebox, Tk
+            r = Tk()
+            r.withdraw()
+            messagebox.showerror("Erro", f"A automação não pôde iniciar:\n{e}\n\nVeja {log_path or 'gerenciador_downloads_erro.log'}")
+            r.destroy()
+        except Exception:
+            pass
