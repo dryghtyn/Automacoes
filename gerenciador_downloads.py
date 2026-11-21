@@ -36,8 +36,15 @@ except Exception:
 
 def _carregar_config(caminho):
     p = Path(caminho)
+    padrao = {"download_dir": "", "auto_resume": True, "tasks": []}
     if not p.exists():
-        return {"download_dir": "", "auto_resume": True, "tasks": []}
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(padrao, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+        return padrao
     try:
         with open(p, "r", encoding="utf-8") as f:
             d = json.load(f)
@@ -243,11 +250,11 @@ class DownloadManagerApp:
             return
         row = ttk.Frame(self.inner, padding=(4, 3))
         row.pack(fill=tk.X, pady=2)
-        lbl = ttk.Label(row, text=task["filename"], width=28)
+        lbl = ttk.Label(row, text=task["filename"], width=24)
         lbl.pack(side=tk.LEFT)
-        pb = ttk.Progressbar(row, length=220, mode="determinate")
+        pb = ttk.Progressbar(row, length=200, mode="determinate")
         pb.pack(side=tk.LEFT, padx=6)
-        status = ttk.Label(row, text=task["status"], width=14)
+        status = ttk.Label(row, text=task["status"], width=26, anchor="w")
         status.pack(side=tk.LEFT, padx=4)
         btn_frame = ttk.Frame(row)
         btn_frame.pack(side=tk.RIGHT)
@@ -281,10 +288,22 @@ class DownloadManagerApp:
         else:
             pb["maximum"] = 100
             pb["value"] = 0
+        def _fmt(n):
+            n = n or 0
+            if n >= 1024*1024*1024:
+                return f"{n/1024/1024/1024:.2f} GB"
+            if n >= 1024*1024:
+                return f"{n/1024/1024:.2f} MB"
+            if n >= 1024:
+                return f"{n/1024:.1f} KB"
+            return f"{n} B"
         st = task.get("status", "paused")
         if task.get("error"):
             st = "erro"
-        status.config(text=f"{st} ({downloaded}/{total})")
+        if total and total > 0:
+            status.config(text=f"{st}: {_fmt(downloaded)} / {_fmt(total)}")
+        else:
+            status.config(text=f"{st}: {_fmt(downloaded)}")
 
     def _continuar(self, task):
         tid = task["id"]
