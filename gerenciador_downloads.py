@@ -339,23 +339,29 @@ class DownloadManagerApp:
         row.pack(fill=tk.X, pady=2)
         row.columnconfigure(0, weight=0, minsize=160)
         row.columnconfigure(1, weight=1, minsize=150)
-        row.columnconfigure(2, weight=0, minsize=260)
-        row.columnconfigure(3, weight=0, minsize=90)
+        row.columnconfigure(2, weight=0, minsize=200)
+        row.columnconfigure(3, weight=0, minsize=110)
+        row.columnconfigure(4, weight=0, minsize=110)
+        row.columnconfigure(5, weight=0, minsize=90)
         lbl = ttk.Label(row, text=task["filename"], width=20, anchor="w")
         lbl.grid(row=0, column=0, sticky="w", padx=(0,4))
         pb = ttk.Progressbar(row, length=150, mode="determinate")
         pb.grid(row=0, column=1, sticky="ew", padx=4)
         status = ttk.Label(row, text=task["status"], anchor="w")
         status.grid(row=0, column=2, sticky="w", padx=4)
+        speed_lbl = ttk.Label(row, text="", anchor="w")
+        speed_lbl.grid(row=0, column=3, sticky="w", padx=4)
+        eta = ttk.Label(row, text="", anchor="w")
+        eta.grid(row=0, column=4, sticky="w", padx=4)
         btn_frame = ttk.Frame(row)
-        btn_frame.grid(row=0, column=3, sticky="e", padx=(4,0))
+        btn_frame.grid(row=0, column=5, sticky="e", padx=(4,0))
         btn_cont = ttk.Button(btn_frame, text="▶", width=3, command=lambda t=task: self._continuar(t))
         btn_cont.pack(side=tk.LEFT, padx=1)
         btn_pause = ttk.Button(btn_frame, text="⏸", width=3, command=lambda t=task: self._pausar(t))
         btn_pause.pack(side=tk.LEFT, padx=1)
         btn_del = ttk.Button(btn_frame, text="✕", width=3, command=lambda t=task: self._remover(t))
         btn_del.pack(side=tk.LEFT, padx=1)
-        self.rows[tid] = {"frame": row, "pb": pb, "status": status, "task": task}
+        self.rows[tid] = {"frame": row, "pb": pb, "status": status, "speed_lbl": speed_lbl, "eta": eta, "task": task}
         self._atualizar_row(tid)
 
     def _atualizar_row(self, tid):
@@ -371,6 +377,8 @@ class DownloadManagerApp:
                 break
         pb = info["pb"]
         status = info["status"]
+        speed_lbl = info.get("speed_lbl")
+        eta_lbl = info.get("eta")
         total = task.get("total", 0)
         downloaded = task.get("downloaded", 0)
         if total and total > 0:
@@ -392,13 +400,38 @@ class DownloadManagerApp:
         if task.get("error"):
             st = "erro"
         speed = task.get("speed", 0)
-        speed_str = ""
-        if speed and speed > 0:
-            speed_str = f"  {_fmt(speed)}/s"
         if total and total > 0:
-            status.config(text=f"{st} {_fmt(downloaded)}/{_fmt(total)}{speed_str}")
+            status.config(text=f"{st} {_fmt(downloaded)}/{_fmt(total)}")
         else:
-            status.config(text=f"{st} {_fmt(downloaded)}{speed_str}")
+            status.config(text=f"{st} {_fmt(downloaded)}")
+        if speed_lbl is not None:
+            speed_lbl.config(text=f"{_fmt(speed)}/s" if (speed and speed > 0) else "")
+        if eta_lbl is not None:
+            eta_text = ""
+            if total and total > 0 and speed and speed > 0:
+                remaining = max(0, total - downloaded)
+                eta_sec = remaining / speed
+                if eta_sec < 60:
+                    eta_text = f"{int(eta_sec)}s"
+                elif eta_sec < 3600:
+                    eta_text = f"{int(eta_sec//60)}m {int(eta_sec%60)}s"
+                else:
+                    eta_text = f"{int(eta_sec//3600)}h {int((eta_sec%3600)//60)}m"
+            eta_lbl.config(text=f"Tempo Estimado: {eta_text}" if eta_text else "Tempo Estimado: --")
+        # ETA
+        eta_lbl = info.get("eta")
+        if eta_lbl is not None:
+            eta_text = ""
+            if total and total > 0 and speed and speed > 0:
+                remaining = max(0, total - downloaded)
+                eta_sec = remaining / speed
+                if eta_sec < 60:
+                    eta_text = f"{int(eta_sec)}s"
+                elif eta_sec < 3600:
+                    eta_text = f"{int(eta_sec//60)}m {int(eta_sec%60)}s"
+                else:
+                    eta_text = f"{int(eta_sec//3600)}h {int((eta_sec%3600)//60)}m"
+            eta_lbl.config(text=f"ETA: {eta_text}" if eta_text else "")
 
     def _continuar(self, task):
         tid = task["id"]
