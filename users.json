@@ -3,6 +3,16 @@
     "salt": "3dec11d7eaf19187498f7648fa1f5a16",
     "hash": "5e272eba5a1538b0ba7d6ffab14eb3d648a9efa38b139a6d5549a2fd4bdfd695",
     "cadastrar_usuario": "sim",
-    "master": "sim"
+    "master": "sim",
+    "mfa_secret": "T6GKJT6P7N74DU7AM4YEIDLRCJG2WGQ2",
+    "mfa_enabled": false
+  },
+  "andre": {
+    "salt": "a775623547b49b815f39c3e1f096391f",
+    "hash": "dbed9a1d288926fe8a71d2ab3d41dfb3627313896937b4420a943dab2936e58f",
+    "cadastrar_usuario": "não",
+    "master": "não",
+    "mfa_secret": "VV5EDSPTTEDXWZ5IJZ7YGII5NV77CODJ",
+    "mfa_enabled": false
   }
 }
