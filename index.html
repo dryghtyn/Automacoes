@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Painel de Automações e Demandas</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --txt:#e2e8f0; --mut:#94a3b8; --acc:#3b82f6; --ok:#10b981; --warn:#f59e0b; --danger:#ef4444; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Segoe UI,system-ui,sans-serif; background:var(--bg); color:var(--txt); }
+  header { padding:24px; background:#111827; border-bottom:1px solid #334155; }
+  header h1 { margin:0; font-size:22px; }
+  header p { margin:6px 0 0; color:var(--mut); font-size:13px; }
+  nav { display:flex; gap:8px; padding:12px 24px; background:#0b1220; border-bottom:1px solid #334155; }
+  nav button { background:#334155; }
+  nav button.active { background:var(--acc); }
+  section { display:none; padding:24px; }
+  section.active { display:block; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:16px; }
+  .card { background:var(--card); border:1px solid #334155; border-radius:12px; padding:18px; display:flex; flex-direction:column; gap:8px; }
+  .card h3 { margin:0; font-size:16px; color:#fff; }
+  .card p { margin:0; color:var(--mut); font-size:13px; flex:1; }
+  .pasta { font-size:11px; color:#64748b; font-family:Consolas,monospace; }
+  .acoes { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
+  button { border:none; border-radius:8px; padding:8px 12px; cursor:pointer; font-size:13px; color:#fff; }
+  .btn-dl { background:var(--ok); text-decoration:none; display:inline-block; }
+  .btn-open { background:var(--acc); }
+  .btn-save { background:var(--ok); }
+  .btn-del { background:var(--danger); }
+  .btn-cancel { background:var(--danger); }
+  .btn-edit { background:var(--acc); }
+  .btn-include { background:var(--ok); }
+  button:hover { filter:brightness(1.1); }
+  .form { background:var(--card); border:1px solid #334155; border-radius:12px; padding:18px; margin-bottom:16px; display:flex; flex-direction:column; gap:8px; }
+  .form input, .form textarea, .form select { background:#0f172a; color:var(--txt); border:1px solid #334155; border-radius:8px; padding:8px; font-family:inherit; }
+  .form textarea { min-height:60px; resize:vertical; }
+  .demanda-card { border-left:4px solid var(--acc); }
+  .status { font-size:12px; padding:2px 8px; border-radius:6px; background:#334155; display:inline-block; }
+  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:100; }
+  .modal-overlay.show { display:flex; }
+  .modal { background:var(--card); border:1px solid #334155; border-radius:12px; padding:24px; width:min(1100px,96vw); height:min(88vh,900px); display:flex; flex-direction:column; gap:12px; }
+  .modal .topo { display:flex; gap:12px; align-items:center; }
+  .modal .topo h2 { margin:0; flex:1; }
+  .modal select { background:#0f172a; color:var(--txt); border:1px solid #334155; border-radius:8px; padding:8px; }
+  .modal .colunas { display:grid; grid-template-columns:1fr 1fr; gap:12px; flex:1; min-height:0; }
+  .col { display:flex; flex-direction:column; gap:6px; min-height:0; }
+  .col label { font-size:12px; color:var(--mut); }
+  .editable { flex:1; min-height:0; background:#0f172a; color:var(--txt); border:1px solid #334155; border-radius:8px; padding:8px; font-family:inherit; overflow:auto; white-space:pre-wrap; }
+  .editable img { max-width:100%; border-radius:6px; margin:4px 0; }
+  .col .scroll { flex:1; min-height:0; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:8px; overflow:auto; font-size:12px; }
+  .col .scroll img { max-width:100%; border-radius:6px; margin:4px 0; }
+  .drop-hint { font-size:11px; color:var(--mut); }
+  .anot-item { padding:8px; border-bottom:1px solid #1e293b; }
+  .anot-item .data { color:var(--mut); font-size:11px; }
+  .anot-item .texto { margin:4px 0; white-space:pre-wrap; }
+  .anot-item .texto img { max-width:100%; border-radius:6px; margin:4px 0; }
+  .anot-item .btns { display:flex; gap:6px; }
+  .anot-item .editable { min-height:60px; }
+  .modal .baixo { display:flex; flex-direction:column; gap:8px; }
+  .modal .baixo .editable { min-height:70px; }
+  .modal .acoes { display:flex; gap:8px; }
+  .toast { position:fixed; bottom:20px; right:20px; background:#10b981; color:#fff; padding:10px 14px; border-radius:8px; opacity:0; transition:opacity .3s; }
+  .toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<header>
+  <div style="display:flex;align-items:center;justify-content:space-between;">
+    <div>
+      <h1>Painel de Automações e Demandas</h1>
+      <p>Gerencie automações e suas demandas/andamentos. Arraste/cole imagens.</p>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <span id="usuarioAtual" style="color:#94a3b8;font-size:13px;"></span>
+      <button class="btn-cancel" onclick="logout()">Sair</button>
+    </div>
+  </div>
+</header>
+<nav>
+  <button class="active" onclick="mostrarAba('automacoes',this)">Automações</button>
+  <button onclick="mostrarAba('demandas',this)">Demandas</button>
+  <button id="navUsuarios" style="display:none;" onclick="mostrarAba('usuarios',this)">Usuários</button>
+  <button id="navConfig" style="display:none;" onclick="mostrarAba('config',this)">Configurações</button>
+</nav>
+<section id="automacoes" class="active">
+  <div class="grid" id="grid"></div>
+</section>
+<section id="demandas">
+  <div class="form">
+    <input id="d_titulo" placeholder="Título da demanda">
+    <div contenteditable="true" id="d_desc" class="editable" style="min-height:60px;"></div>
+    <input id="d_qp" placeholder="Link da QP (Jira)">
+    <select id="d_status">
+      <option>Pendente</option><option>Em andamento</option><option>Concluída</option><option>Bloqueada</option>
+    </select>
+    <button class="btn-save" onclick="criarDemanda()">Criar demanda</button>
+  </div>
+  <div class="grid" id="demandasGrid"></div>
+</section>
+<section id="usuarios">
+  <div class="form local-only">
+    <h3>Usuários</h3>
+    <div id="listaUsuarios" style="margin-bottom:8px;"></div>
+    <input id="novo_usuario_criar" placeholder="Novo usuário">
+    <input id="nova_senha_criar" type="password" placeholder="Senha (mín. 4)">
+    <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="perm_cadastrar"> Permissão: cadastrar usuários</label>
+    <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="perm_master"> Permissão: master (configurações)</label>
+    <button class="btn-include" onclick="criarUsuario()">Criar usuário</button>
+  </div>
+</section>
+<section id="config">
+  <div class="form">
+    <h3>Conta (usuário e senha)</h3>
+    <input id="novo_usuario" placeholder="Novo usuário (deixe vazio para manter)">
+    <input id="senha_atual" type="password" placeholder="Senha atual">
+    <input id="senha_nova" type="password" placeholder="Nova senha (mín. 4, opcional)">
+    <button class="btn-save" onclick="alterarConta()">Salvar alterações</button>
+  </div>
+  <div class="form local-only">
+    <h3>GitHub (armazenamento dos .py)</h3>
+    <input id="gh_owner" placeholder="Owner (ex.: keslley)">
+    <input id="gh_repo" placeholder="Repositório (ex.: automacoes)">
+    <input id="gh_branch" placeholder="Branch (ex.: main)">
+    <input id="gh_users_path" placeholder="Arquivo de usuários no GitHub (ex.: users.json)">
+    <input id="gh_token" type="password" placeholder="Token GitHub (para upload)">
+    <button class="btn-save" onclick="salvarGithubConfig()">Salvar configuração GitHub</button>
+    <p class="drop-hint">Visível apenas no host local. Quando configurado, a aba Arquivos lista e baixa os .py direto do GitHub.</p>
+    <p id="ghStatus" class="drop-hint"></p>
+  </div>
+
+  <div class="form">
+    <h3>Configuração Jira</h3>
+    <input id="jira_base" placeholder="URL base (ex.: https://qualityautomacao.atlassian.net)">
+    <input id="jira_email" placeholder="E-mail da conta Jira">
+    <input id="jira_token" type="password" placeholder="API Token Jira">
+    <button class="btn-save" onclick="salvarJiraConfig()">Salvar configuração</button>
+    <p class="drop-hint">Gere o API Token em: https://id.atlassian.com/manage-profile/security/api-tokens</p>
+  </div>
+</section>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" id="modal">
+    <div class="topo">
+      <h2 id="modalTitulo"></h2>
+      <select id="modalStatus">
+        <option>Pendente</option><option>Em andamento</option><option>Concluída</option><option>Bloqueada</option>
+      </select>
+    </div>
+    <div class="topo">
+      <input id="modalQpLink" placeholder="Link da QP (Jira)" style="flex:1;">
+      <button class="btn-open" onclick="consultarQpStatus()">Consultar status</button>
+      <span id="modalQpStatus" class="status"></span>
+    </div>
+    <div class="colunas">
+      <div class="col">
+        <label>Descrição</label>
+        <div class="drop-hint">Arraste ou cole (Ctrl+V) imagens aqui</div>
+        <div contenteditable="true" id="modalDesc" class="editable"></div>
+      </div>
+      <div class="col">
+        <label>Notas</label>
+        <div class="scroll anotacoes" id="modalAnotacoes"></div>
+      </div>
+    </div>
+    <div class="baixo">
+      <label>Nova anotação</label>
+      <div class="drop-hint">Arraste ou cole (Ctrl+V) imagens aqui</div>
+      <div contenteditable="true" id="modalAnot" class="editable"></div>
+      <div class="acoes">
+        <button class="btn-include" onclick="incluirNota()">Incluir nota</button>
+        <button class="btn-save" onclick="salvarCard()">Salvar</button>
+        <button class="btn-cancel" onclick="fecharModal()">Cancelar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="filePicker" accept="image/*" style="display:none">
+
+<div class="toast" id="toast"></div>
+<script>
+const _fetch = window.fetch;
+window.fetch = async (...args) => {
+  const r = await _fetch(...args);
+  if (r.status === 401) { window.location = '/login'; }
+  return r;
+};
+let demandasCache = [];
+let demandaAtual = null;
+let editingIdx = null;
+let textareaAlvo = null;
+
+function mostrarAba(id,btn){
+  document.querySelectorAll('section').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  if(id==='automacoes') carregarAutomacoes();
+  if(id==='demandas') carregarDemandas();
+  if(id==='usuarios') carregarUsuarios();
+}
+async function carregarArquivos(){
+  const r = await fetch('/api/arquivos');
+  const items = await r.json();
+  const grid = document.getElementById('arquivosGrid');
+  grid.innerHTML = '';
+  items.forEach(it => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const url = it.download_url || ('/download/'+encodeURIComponent(it.caminho));
+    card.innerHTML = '<h3>'+it.nome+'</h3><p class="pasta">'+it.caminho+'</p>'+
+      (it.fonte ? '<div class="pasta">Fonte: '+it.fonte+'</div>' : '')+
+      '<div class="pasta">Tamanho: '+it.tamanho+' bytes</div>'+
+      '<div class="acoes"><a class="btn-dl" href="'+url+'" download>Baixar</a></div>';
+    grid.appendChild(card);
+  });
+  if(items.length===0) grid.innerHTML = '<p class="drop-hint">Nenhum arquivo .py encontrado.</p>';
+}
+async function carregarAutomacoes(){
+  const r = await fetch('/api/automacoes');
+  const items = await r.json();
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  items.forEach(it => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = '<h3>'+it.nome+'</h3><p>'+(it.descricao||'Sem descrição.')+'</p>'+
+      '<div class="pasta">Pasta: automações/'+it.pasta+'</div>'+
+      '<div class="acoes">'+
+      '<button class="btn-dl" onclick="baixar(\''+it.script+'\',\''+(it.download_url||'')+'\')">Baixar script</button>'+
+      '</div>';
+    grid.appendChild(card);
+  });
+}
+function baixar(script, url){
+  const a = document.createElement('a');
+  a.href = url || ('/download/'+encodeURIComponent(script));
+  a.download = script;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  mostrar('Download iniciado!');
+}
+async function abrir(script){
+  try{
+    const r = await fetch('/run/'+encodeURIComponent(script), {method:'POST'});
+    const d = await r.json();
+    mostrar(d.ok ? 'Automação iniciada!' : ('Erro: '+(d.erro||'')) );
+  }catch(e){ mostrar('Erro ao abrir.'); }
+}
+async function carregarDemandas(){
+  const r = await fetch('/api/demandas');
+  const grid = document.getElementById('demandasGrid');
+  if(!r.ok){
+    let msg = 'Configure o token do GitHub para consultar os cards.';
+    try{ const d = await r.json(); if(d.erro) msg = d.erro; }catch(e){}
+    grid.innerHTML = '<p class="drop-hint" style="color:#ef4444;">'+msg+'</p>';
+    demandasCache = [];
+    return;
+  }
+  demandasCache = await r.json();
+  grid.innerHTML = '';
+  demandasCache.forEach(it => {
+    const card = document.createElement('div');
+    card.className = 'card demanda-card';
+    card.innerHTML = '<h3>'+it.titulo+'</h3>'+
+      '<div><span class="status">'+it.status+'</span></div>'+
+      (it.qp_status ? '<div class="status" style="background:#1e3a8a;">QP: '+it.qp_status+'</div>' : '')+
+      (it.qp_link ? '<div class="pasta">'+it.qp_link+'</div>' : '')+
+      '<div class="acoes">'+
+      '<button class="btn-open" onclick="abrirDemanda('+it.id+')">Abrir</button>'+
+      '<button class="btn-del" onclick="excluirDemandaCard('+it.id+')">Excluir</button>'+
+      '</div>';
+    grid.appendChild(card);
+  });
+}
+function sanitizar(html){ return (html||'').replace(/<script[\s\S]*?<\/script>/gi,''); }
+function legadoParaHtml(texto){
+  return (texto||'').replace(/!\[img\]\(([^)]+)\)/g, '<img src="$1" alt="img">');
+}
+
+function abrirDemanda(id){
+  demandaAtual = demandasCache.find(d=>d.id===id);
+  if(!demandaAtual) return;
+  editingIdx = null;
+  document.getElementById('modalTitulo').textContent = demandaAtual.titulo;
+  document.getElementById('modalStatus').value = demandaAtual.status;
+  document.getElementById('modalDesc').innerHTML = sanitizar(legadoParaHtml(demandaAtual.descricao||''));
+  document.getElementById('modalQpLink').value = demandaAtual.qp_link||'';
+  document.getElementById('modalQpStatus').textContent = demandaAtual.qp_status||'';
+  document.getElementById('modalAnot').innerHTML = '';
+  renderAnotacoes();
+  document.getElementById('modalOverlay').classList.add('show');
+  habilitarImagens(document.getElementById('modalDesc'));
+  habilitarImagens(document.getElementById('modalAnot'));
+}
+function fecharModal(){
+  document.getElementById('modalOverlay').classList.remove('show');
+  demandaAtual = null;
+  editingIdx = null;
+}
+function renderAnotacoes(){
+  const container = document.getElementById('modalAnotacoes');
+  const anots = (demandaAtual && demandaAtual.anotacoes) ? demandaAtual.anotacoes : [];
+  if(anots.length===0){ container.innerHTML='Sem anotações.'; return; }
+  container.innerHTML = anots.map((a,i)=>{
+    if(editingIdx===i){
+      return '<div class="anot-item">'+
+        '<div class="data">'+a.data+'</div>'+
+        '<div contenteditable="true" id="editAnotText" class="editable">'+sanitizar(legadoParaHtml(a.texto||''))+'</div>'+
+        '<div class="btns">'+
+          '<button class="btn-save" onclick="salvarEditAnot('+i+')">Salvar</button>'+
+          '<button class="btn-cancel" onclick="cancelarEditAnot()">Cancelar</button>'+
+        '</div>'+
+      '</div>';
+    }
+    return '<div class="anot-item">'+
+      '<div class="data">'+a.data+'</div>'+
+      '<div class="texto">'+sanitizar(legadoParaHtml(a.texto||''))+'</div>'+
+      '<div class="btns">'+
+        '<button class="btn-edit" onclick="iniciarEditAnot('+i+')">Alterar</button>'+
+        '<button class="btn-del" onclick="excluirAnot('+i+')">Excluir</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  const et = document.getElementById('editAnotText');
+  if(et) habilitarImagens(et);
+}
+function iniciarEditAnot(i){
+  editingIdx = i;
+  renderAnotacoes();
+}
+function cancelarEditAnot(){
+  editingIdx = null;
+  renderAnotacoes();
+}
+async function salvarEditAnot(i){
+  const el = document.getElementById('editAnotText');
+  const html = el.innerHTML.trim();
+  if(!html){ mostrar('Escreva uma anotação.'); return; }
+  await fetch('/api/demandas/'+demandaAtual.id+'/anotacoes/'+i,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto:html})});
+  mostrar('Anotação atualizada!');
+  await carregarDemandas();
+  const updated = demandasCache.find(d=>d.id===demandaAtual.id);
+  if(updated){ demandaAtual = updated; editingIdx=null; renderAnotacoes(); }
+}
+async function excluirAnot(i){
+  if(!confirm('Excluir anotação?')) return;
+  await fetch('/api/demandas/'+demandaAtual.id+'/anotacoes/'+i,{method:'DELETE'});
+  mostrar('Anotação excluída!');
+  await carregarDemandas();
+  const updated = demandasCache.find(d=>d.id===demandaAtual.id);
+  if(updated){ demandaAtual = updated; editingIdx=null; renderAnotacoes(); }
+}
+async function incluirNota(){
+  if(!demandaAtual) return;
+  const el = document.getElementById('modalAnot');
+  const html = el.innerHTML.trim();
+  if(!html){ mostrar('Escreva uma anotação.'); return; }
+  await fetch('/api/demandas/'+demandaAtual.id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({anotacao:html})});
+  el.innerHTML = '';
+  mostrar('Nota incluída!');
+  await carregarDemandas();
+  const updated = demandasCache.find(d=>d.id===demandaAtual.id);
+  if(updated){ demandaAtual = updated; renderAnotacoes(); }
+}
+async function salvarCard(){
+  if(!demandaAtual) return;
+  const status = document.getElementById('modalStatus').value;
+  const desc = document.getElementById('modalDesc').innerHTML.trim();
+  const qp = document.getElementById('modalQpLink').value.trim();
+  await fetch('/api/demandas/'+demandaAtual.id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status,descricao:desc,qp_link:qp})});
+  mostrar('Salvo!');
+  fecharModal();
+  carregarDemandas();
+}
+async function excluirDemandaCard(id){
+  if(!confirm('Excluir demanda?')) return;
+  await fetch('/api/demandas/'+id,{method:'DELETE'});
+  mostrar('Excluída!');
+  carregarDemandas();
+}
+async function consultarQpStatus(){
+  const link = document.getElementById('modalQpLink').value.trim();
+  if(!link){ mostrar('Informe o link da QP.'); return; }
+  try{
+    const r = await fetch('/api/jira/status?link='+encodeURIComponent(link));
+    const d = await r.json();
+    if(d.erro){ mostrar(d.erro); return; }
+    document.getElementById('modalQpStatus').textContent = d.status || d.key;
+    // save status to demand
+    if(demandaAtual){
+      await fetch('/api/demandas/'+demandaAtual.id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({qp_status:d.status})});
+      await carregarDemandas();
+      const updated = demandasCache.find(x=>x.id===demandaAtual.id);
+      if(updated) demandaAtual = updated;
+    }
+    mostrar('Status: '+(d.status||''));
+  }catch(e){ mostrar('Erro ao consultar.'); }
+}
+async function carregarUsuarios(){
+  try{
+    const r = await fetch('/api/users');
+    if(!r.ok) return;
+    const d = await r.json();
+    const div = document.getElementById('listaUsuarios');
+    if(!div) return;
+    div.innerHTML = (d.usuarios||[]).map(u =>
+      '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #334155;gap:8px;">'+
+      '<span style="flex:1;">'+u.usuario+'</span>'+
+      '<span class="drop-hint" style="font-size:11px;">'+(u.cadastrar_usuario==='sim'?'cad ':'')+(u.master==='sim'?'master ':'')+(u.mfa==='sim'?'MFA':'no-MFA')+'</span>'+
+      '<button class="btn-del" style="padding:4px 8px;font-size:12px;" onclick="excluirUsuario(\''+u.usuario+'\')">Excluir</button>'+
+      '</div>'
+    ).join('') || '<p class="drop-hint">Nenhum usuário.</p>';
+  }catch(e){}
+}
+async function criarUsuario(){
+  const username = document.getElementById('novo_usuario_criar').value.trim();
+  const password = document.getElementById('nova_senha_criar').value;
+  if(!username || !password){ mostrar('Preencha usuário e senha.'); return; }
+  const cadastrar = document.getElementById('perm_cadastrar').checked ? 'sim' : 'não';
+  const master = document.getElementById('perm_master').checked ? 'sim' : 'não';
+  try{
+    const r = await fetch('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password,cadastrar_usuario:cadastrar,master})});
+    const d = await r.json();
+    if(d.erro){ mostrar(d.erro); return; }
+    mostrar(d.github ? 'Usuário criado e sincronizado com o GitHub!' : 'Usuário criado (salvo localmente; configure token para sincronizar).');
+    document.getElementById('novo_usuario_criar').value='';
+    document.getElementById('nova_senha_criar').value='';
+    document.getElementById('perm_cadastrar').checked=false;
+    document.getElementById('perm_master').checked=false;
+    carregarUsuarios();
+  }catch(e){ mostrar('Erro ao criar usuário.'); }
+}
+async function excluirUsuario(u){
+  if(!confirm('Excluir usuário '+u+'?')) return;
+  try{
+    const r = await fetch('/api/users/'+encodeURIComponent(u),{method:'DELETE'});
+    if(r.status===204){ mostrar('Usuário excluído!'); carregarUsuarios(); }
+    else { const d=await r.json(); mostrar(d.erro||'Erro.'); }
+  }catch(e){ mostrar('Erro ao excluir.'); }
+}
+async function alterarConta(){
+  const atual = document.getElementById('senha_atual').value;
+  const novoUsuario = document.getElementById('novo_usuario').value.trim();
+  const novaSenha = document.getElementById('senha_nova').value;
+  if(!atual){ mostrar('Informe a senha atual.'); return; }
+  if(!novoUsuario && !novaSenha){ mostrar('Informe novo usuário e/ou nova senha.'); return; }
+  try{
+    const r = await fetch('/api/auth/account',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({atual,novo_usuario:novoUsuario,nova_senha:novaSenha})});
+    const d = await r.json();
+    if(d.erro){ mostrar(d.erro); return; }
+    mostrar(d.github ? 'Conta atualizada e sincronizada com o GitHub!' : 'Conta atualizada (salvo localmente; configure token para sincronizar).');
+    if(d.usuario) document.getElementById('usuarioAtual').textContent = d.usuario;
+    document.getElementById('senha_atual').value='';
+    document.getElementById('senha_nova').value='';
+    document.getElementById('novo_usuario').value='';
+  }catch(e){ mostrar('Erro ao atualizar conta.'); }
+}
+function logout(){
+  window.location = '/logout';
+}
+async function salvarJiraConfig(){
+  const base = document.getElementById('jira_base').value.trim();
+  const email = document.getElementById('jira_email').value.trim();
+  const token = document.getElementById('jira_token').value.trim();
+  const body = {base_url:base,email:email};
+  if(token) body.api_token = token;
+  const r = await fetch('/api/jira/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d = await r.json();
+  mostrar('Configuração salva!');
+}
+async function salvarGithubConfig(){
+  const owner = document.getElementById('gh_owner').value.trim();
+  const repo = document.getElementById('gh_repo').value.trim();
+  const branch = document.getElementById('gh_branch').value.trim();
+  const usersPath = document.getElementById('gh_users_path').value.trim();
+  const token = document.getElementById('gh_token').value.trim();
+  const body = {owner,repo,branch};
+  if(usersPath) body.users_path = usersPath;
+  if(token && token !== '***') body.token = token;
+  const r = await fetch('/api/github/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d = await r.json();
+  if(d.erro){ mostrar(d.erro); return; }
+  mostrar('Configuração GitHub salva!');
+  document.getElementById('gh_token').value = '';
+  carregarArquivos();
+}
+async function carregarGithubConfig(){
+  try{
+    const r = await fetch('/api/github/config');
+    const d = await r.json();
+    if(d.erro){ return; }
+    if(d.owner) document.getElementById('gh_owner').value = d.owner;
+    if(d.repo) document.getElementById('gh_repo').value = d.repo;
+    if(d.branch) document.getElementById('gh_branch').value = d.branch;
+    if(d.users_path) document.getElementById('gh_users_path').value = d.users_path;
+    if(d.token) document.getElementById('gh_token').placeholder = d.token === '***' ? 'Token salvo (*** )' : 'Token GitHub (para upload)';
+    const st = document.getElementById('ghStatus');
+    if(st){
+      if(!d.owner || !d.repo){ st.textContent = 'Status: GitHub não configurado (usando arquivos/usuários locais).'; }
+      else if(d.token && d.token !== '***'){ st.textContent = 'Status: sincronização de usuários ATIVA (token configurado).'; }
+      else { st.textContent = 'Status: somente leitura do GitHub (sem token — cadastros salvam localmente).'; }
+    }
+  }catch(e){}
+}
+
+async function carregarJiraConfig(){
+  try{
+    const r = await fetch('/api/jira/config');
+    const d = await r.json();
+    if(d.base_url) document.getElementById('jira_base').value = d.base_url;
+    if(d.email) document.getElementById('jira_email').value = d.email;
+  }catch(e){}
+}
+async function criarDemanda(){
+  const titulo = document.getElementById('d_titulo').value.trim();
+  if(!titulo){ mostrar('Informe um título.'); return; }
+  const desc = document.getElementById('d_desc').innerHTML.trim();
+  const status = document.getElementById('d_status').value;
+  const qp = document.getElementById('d_qp').value.trim();
+  const rr = await fetch('/api/demandas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({titulo,descricao:desc,status,qp_link:qp})});
+  if(!rr.ok){ let m='Erro ao criar demanda.'; try{ const dd=await rr.json(); if(dd.erro) m=dd.erro; }catch(e){} mostrar(m); return; }
+  document.getElementById('d_titulo').value='';
+  document.getElementById('d_desc').innerHTML='';
+  mostrar('Demanda criada!');
+  carregarDemandas();
+}
+
+// ---- imagens ----
+let filePickerCallback = null;
+document.getElementById('filePicker').addEventListener('change', async (e)=>{
+  const f = e.target.files && e.target.files[0];
+  if(!f) return;
+  if(filePickerCallback) await uploadArquivo(f, filePickerCallback);
+  e.target.value = '';
+  filePickerCallback = null;
+});
+function importarImagem(el){
+  filePickerCallback = el;
+  document.getElementById('filePicker').click();
+}
+async function uploadArquivo(file, el){
+  return new Promise((resolve)=>{
+    const reader = new FileReader();
+    reader.onload = async (ev)=>{
+      const ext = (file.name.split('.').pop()||'png').toLowerCase();
+      const r = await fetch('/api/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:ev.target.result,ext})});
+      const d = await r.json();
+      if(d.url){
+        inserirImagem(el, d.url);
+      } else {
+        mostrar('Erro no upload: '+(d.erro||''));
+      }
+      resolve();
+    };
+    reader.readAsDataURL(file);
+  });
+}
+function inserirImagem(el, url){
+  el.focus();
+  const sel = window.getSelection();
+  let needLeading = false;
+  if(sel && sel.rangeCount>0 && el.contains(sel.anchorNode)){
+    const range = sel.getRangeAt(0);
+    const node = range.startContainer;
+    if(node.nodeType === Node.TEXT_NODE){
+      const before = node.textContent.slice(0, range.startOffset);
+      const lastNl = before.lastIndexOf('\n');
+      if(before.slice(lastNl+1).trim().length > 0) needLeading = true;
+    } else {
+      if(range.startOffset > 0) needLeading = true;
+    }
+  }
+  const html = (needLeading ? '<br>' : '') + '<img src="'+url+'">' + '<br>';
+  document.execCommand('insertHTML', false, html);
+}
+function habilitarImagens(el){
+  if(el._imgEnabled) return;
+  el._imgEnabled = true;
+  el.addEventListener('paste', async (e)=>{
+    const items = (e.clipboardData && e.clipboardData.items) || [];
+    for(const it of items){
+      if(it.type && it.type.startsWith('image/')){
+        e.preventDefault();
+        const file = it.getAsFile();
+        if(file) await uploadArquivo(file, el);
+        return;
+      }
+    }
+  });
+  el.addEventListener('dragover', (e)=>{ e.preventDefault(); });
+  el.addEventListener('drop', async (e)=>{
+    e.preventDefault();
+    const files = (e.dataTransfer && e.dataTransfer.files) || [];
+    for(const f of files){
+      if(f.type && f.type.startsWith('image/')){
+        await uploadArquivo(f, el);
+      }
+    }
+  });
+}
+
+function mostrar(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2000);
+}
+(async function(){ try{ const r=await fetch('/api/me'); const d=await r.json(); if(d.usuario) document.getElementById('usuarioAtual').textContent=d.usuario; if(d.cadastrar_usuario==='sim'){ const n=document.getElementById('navUsuarios'); if(n) n.style.display=''; } if(d.master==='sim'){ const n=document.getElementById('navConfig'); if(n) n.style.display=''; } const pc=document.getElementById('perm_cadastrar'); const pm=document.getElementById('perm_master'); if(pc){ pc.disabled = !(d.cadastrar_usuario==='sim' || d.master==='sim'); } if(pm){ pm.disabled = !(d.master==='sim'); } }catch(e){} })();
+const _isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+if(!_isLocal){ document.querySelectorAll('.local-only').forEach(e=>e.style.display='none'); }
+carregarAutomacoes();
+carregarDemandas();
+carregarJiraConfig();
+carregarGithubConfig();
+carregarUsuarios();
+</script>
+</body>
+</html>
